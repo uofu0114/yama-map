@@ -1,0 +1,2 @@
+// Supabase の公開用キー（anon）。RLSで守られているので公開して問題ありません
+window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhem1oaHRha3d1dHF0cXhxaHBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwMzgzMzQsImV4cCI6MjEwNDYxNDMzNH0.OoCeSvouz3i9OrTN0XyAm3tE3xdREJdsB1V_NuSUuCU';
