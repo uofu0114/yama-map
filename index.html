@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>わたしの山行記録マップ</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{--accent:#c2410c;--ink:#1f2937;--sub:#6b7280;--line:#e5e7eb;--bg:#f7f5f0;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;color:var(--ink);background:var(--bg)}
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:12px 20px;background:#2f3e2e;color:#fff}
+  header h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.03em}
+  .stats{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13px;align-items:center}
+  .auth{margin-left:auto;font-size:13px;display:flex;gap:8px;align-items:center}
+  .auth button{padding:4px 10px;font-size:13px;background:#fff;color:#2f3e2e;border-color:#fff}
+  body.guest .owner-only{display:none!important}
+  .notice{font-size:12px;color:var(--sub);background:#fff;border:1px dashed #d1d5db;border-radius:8px;padding:8px 10px;margin-bottom:12px}
+  .stats b{font-size:18px;margin:0 2px}
+  .bar{width:120px;height:8px;background:#ffffff33;border-radius:4px;overflow:hidden;display:inline-block;vertical-align:middle;margin-left:6px}
+  .bar i{display:block;height:100%;background:#fb923c}
+  main{display:grid;grid-template-columns:1fr 350px;height:calc(100vh - 56px)}
+  #map{height:100%}
+  #map.adding{cursor:crosshair}
+  aside{overflow-y:auto;padding:12px;border-left:1px solid var(--line);background:var(--bg)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+  input,select,textarea{width:100%;font:inherit;font-size:14px;padding:7px 9px;border:1px solid #d1d5db;border-radius:6px;background:#fff}
+  textarea{resize:vertical}
+  .filters{display:flex;gap:10px;margin-top:8px;font-size:13px;flex-wrap:wrap}
+  .filters label{display:flex;align-items:center;gap:3px;cursor:pointer}
+  .filters input{width:auto}
+  button{font:inherit;font-size:14px;padding:7px 12px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+  button.ghost{background:#fff;color:var(--accent)}
+  button.plain{background:#fff;color:var(--ink);border-color:#d1d5db}
+  .hint{font-size:12px;color:var(--sub);margin:6px 0 0}
+  #list{list-style:none;margin:0 0 12px;padding:0;background:#fff;border:1px solid var(--line);border-radius:10px;max-height:46vh;overflow-y:auto}
+  #list li{padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;justify-content:space-between;gap:8px;font-size:14px}
+  #list li:last-child{border-bottom:none}
+  #list li:hover{background:#fff7ed}
+  #list .meta{font-size:12px;color:var(--sub);white-space:nowrap;text-align:right}
+  #list .done{color:var(--accent);font-weight:700}
+  #list .empty{color:var(--sub);cursor:default}
+  .count{font-size:12px;color:var(--sub);margin:0 0 6px 2px}
+  summary{cursor:pointer;font-weight:700;font-size:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .pop{min-width:220px;max-width:280px;font-size:13px}
+  .pop h3{margin:0;font-size:16px}
+  .pop .sub{color:var(--sub);font-size:12px}
+  .pop ul{list-style:none;padding:0;margin:8px 0;max-height:200px;overflow-y:auto}
+  .pop li{border-top:1px solid var(--line);padding:6px 0}
+  .pop .memo{white-space:pre-wrap;margin-top:2px}
+  .pop a{color:var(--accent);cursor:pointer;font-size:12px;margin-right:8px}
+  .star{color:#f59e0b;letter-spacing:1px}
+  .lbl{background:#fff;border:1px solid var(--accent);color:var(--accent);font-weight:700;font-size:11px;padding:1px 4px;box-shadow:none}
+  .lbl::before{display:none}
+  dialog{border:none;border-radius:12px;padding:20px;width:min(440px,92vw);box-shadow:0 10px 40px #0004}
+  dialog::backdrop{background:#0005}
+  dialog h2{margin:0 0 12px;font-size:18px}
+  dialog label{display:block;font-size:13px;color:var(--sub);margin:10px 0 3px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+  @media (max-width:800px){
+    main{grid-template-columns:1fr;height:auto}
+    #map{height:60vh}
+    aside{border-left:none}
+  }
+</style>
+</head>
+<body class="guest">
+<header>
+  <h1>⛰ わたしの山行記録マップ</h1>
+  <div class="stats" id="stats"></div>
+  <div class="auth" id="auth"></div>
+</header>
+
+<main>
+  <div id="map"></div>
+  <aside>
+    <div class="card">
+      <input id="q" placeholder="山の名前で検索（例：槍）">
+      <div class="filters">
+        <label><input type="radio" name="flt" value="all" checked>すべて</label>
+        <label><input type="radio" name="flt" value="done">登った山</label>
+        <label><input type="radio" name="flt" value="todo">まだの百名山</label>
+      </div>
+    </div>
+    <p class="count" id="count"></p>
+    <ul id="list"></ul>
+
+    <p class="notice" id="guestNote">この記録は誰でも閲覧できます。記録の追加・編集は、右上の「ログイン」からできます。</p>
+    <div class="card owner-only">
+      <button type="button" class="ghost" id="addMtBtn">＋ 百名山以外の山を追加</button>
+      <p class="hint" id="addHint">低山や近所の山も追加できます。ボタンを押してから、地図上の山頂をクリックしてください。</p>
+    </div>
+    <details class="card owner-only">
+      <summary>バックアップ</summary>
+      <p class="hint">記録はクラウド（Supabase）に保存されています。念のため、ときどきファイルにも保存しておくと安心です。</p>
+      <div class="row">
+        <button type="button" class="plain" id="dl">バックアップを保存</button>
+        <button type="button" class="plain" id="ul">バックアップから取り込む</button>
+        <input type="file" id="file" accept=".json,application/json" hidden>
+      </div>
+      <p class="hint" id="dataHint"></p>
+    </details>
+  </aside>
+</main>
+
+<!-- 山行記録の入力 -->
+<dialog id="recDlg">
+  <form id="recForm">
+    <h2 id="recTitle">山行記録</h2>
+    <div class="two">
+      <div><label for="r_date">登った日</label><input type="date" id="r_date" required></div>
+      <div><label for="r_rating">満足度</label>
+        <select id="r_rating">
+          <option value="5">★★★★★ 最高</option>
+          <option value="4">★★★★☆ よかった</option>
+          <option value="3" selected>★★★☆☆ ふつう</option>
+          <option value="2">★★☆☆☆ いまひとつ</option>
+          <option value="1">★☆☆☆☆ 大変だった</option>
+        </select></div>
+    </div>
+    <div class="two">
+      <div><label for="r_weather">天気</label><input id="r_weather" list="wlist" placeholder="例：晴れ"></div>
+      <div><label for="r_with">同行者</label><input id="r_with" placeholder="例：ひとり／友人2人"></div>
+    </div>
+    <datalist id="wlist"><option>快晴</option><option>晴れ</option><option>くもり</option><option>ガス</option><option>雨</option><option>雪</option></datalist>
+    <label for="r_route">コース・所要時間</label>
+    <input id="r_route" placeholder="例：〇〇登山口→山頂→往復　6時間">
+    <label for="r_memo">どうだったか（感想・メモ）</label>
+    <textarea id="r_memo" rows="5" placeholder="景色、きつかった所、山小屋、温泉、次に行くなら…など"></textarea>
+    <div class="actions">
+      <button type="button" class="plain" id="recCancel">キャンセル</button>
+      <button type="submit">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ログイン -->
+<dialog id="loginDlg">
+  <form id="loginForm">
+    <h2>ログイン</h2>
+    <p class="hint">登録済みのメールアドレスを入れると、ログイン用のリンクがメールで届きます。リンクを開くとログインできます。</p>
+    <label for="l_mail">メールアドレス</label>
+    <input id="l_mail" type="email" required autocomplete="email">
+    <p class="hint" id="loginMsg"></p>
+    <div class="actions">
+      <button type="button" class="plain" id="loginCancel">閉じる</button>
+      <button type="submit">リンクを送る</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 百名山以外の山の追加 -->
+<dialog id="mtDlg">
+  <form id="mtForm">
+    <h2>山を追加</h2>
+    <label for="m_name">山の名前</label>
+    <input id="m_name" required placeholder="例：高尾山">
+    <label for="m_elev">標高（m・わかれば）</label>
+    <input id="m_elev" type="number" min="0" max="4000" placeholder="例：599">
+    <div class="actions">
+      <button type="button" class="plain" id="mtCancel">キャンセル</button>
+      <button type="submit">追加して記録を書く</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="config.js"></script>
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// ▼ Supabase の接続先（anonキーは公開しても大丈夫な鍵です。データはRLSで守られています）
+const SUPABASE_URL = "https://qazmhhtakwutqtqxqhpa.supabase.co";
+const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY; // config.js に書いてあります
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// 日本百名山（名前, 標高m, 緯度, 経度）。番号は深田久弥『日本百名山』の順。
+const HYAKU = [
+["利尻岳",1721,45.179,141.242],["羅臼岳",1661,44.076,145.122],["斜里岳",1547,43.766,144.718],["阿寒岳（雌阿寒岳）",1499,43.386,144.009],
+["大雪山（旭岳）",2291,43.664,142.854],["トムラウシ",2141,43.527,142.849],["十勝岳",2077,43.418,142.686],["幌尻岳",2052,42.719,142.683],
+["後方羊蹄山",1898,42.827,140.811],["岩木山",1625,40.656,140.303],["八甲田山",1585,40.659,140.877],["八幡平",1613,39.958,140.854],
+["岩手山",2038,39.853,141.001],["早池峰",1917,39.559,141.489],["鳥海山",2236,39.099,140.049],["月山",1984,38.549,140.027],
+["朝日岳（大朝日岳）",1871,38.261,139.923],["蔵王山",1841,38.144,140.440],["飯豊山",2105,37.855,139.707],["吾妻山",2035,37.735,140.143],
+["安達太良山",1700,37.621,140.288],["磐梯山",1816,37.601,140.072],["会津駒ヶ岳",2133,37.048,139.354],["那須岳",1915,37.123,139.963],
+["越後駒ヶ岳",2003,37.124,139.078],["平ヶ岳",2141,36.993,139.170],["巻機山",1967,36.979,138.963],["燧ヶ岳",2356,36.955,139.285],
+["至仏山",2228,36.904,139.173],["谷川岳",1977,36.837,138.930],["雨飾山",1963,36.902,137.963],["苗場山",2145,36.846,138.690],
+["妙高山",2454,36.891,138.114],["火打山",2462,36.920,138.069],["高妻山",2353,36.797,138.050],["男体山",2486,36.765,139.491],
+["奥白根山",2578,36.799,139.376],["皇海山",2144,36.680,139.336],["武尊山",2158,36.805,139.133],["赤城山",1828,36.560,139.193],
+["草津白根山",2171,36.644,138.528],["四阿山",2354,36.541,138.413],["浅間山",2568,36.406,138.523],["筑波山",877,36.225,140.107],
+["白馬岳",2932,36.759,137.759],["五竜岳",2814,36.658,137.753],["鹿島槍ヶ岳",2889,36.625,137.747],["剱岳",2999,36.623,137.617],
+["立山",3015,36.576,137.620],["薬師岳",2926,36.469,137.545],["黒部五郎岳",2840,36.393,137.540],["水晶岳",2986,36.426,137.603],
+["鷲羽岳",2924,36.403,137.605],["槍ヶ岳",3180,36.342,137.648],["穂高岳（奥穂高岳）",3190,36.289,137.648],["常念岳",2857,36.325,137.727],
+["笠ヶ岳",2898,36.316,137.551],["焼岳",2455,36.227,137.587],["乗鞍岳",3026,36.106,137.554],["御嶽山",3067,35.893,137.481],
+["美ヶ原",2034,36.226,138.108],["霧ヶ峰",1925,36.103,138.196],["蓼科山",2531,36.104,138.295],["八ヶ岳（赤岳）",2899,35.971,138.370],
+["両神山",1723,35.996,138.842],["雲取山",2017,35.856,138.944],["甲武信ヶ岳",2475,35.909,138.730],["金峰山",2599,35.871,138.625],
+["瑞牆山",2230,35.893,138.592],["大菩薩嶺",2057,35.749,138.845],["丹沢山",1567,35.474,139.163],["富士山",3776,35.361,138.727],
+["天城山",1406,34.863,139.002],["木曽駒ヶ岳",2956,35.789,137.804],["空木岳",2864,35.718,137.817],["恵那山",2191,35.443,137.597],
+["甲斐駒ヶ岳",2967,35.758,138.237],["仙丈ヶ岳",3033,35.720,138.183],["鳳凰山",2841,35.703,138.304],["北岳",3193,35.674,138.239],
+["間ノ岳",3190,35.646,138.228],["塩見岳",3052,35.574,138.183],["悪沢岳（荒川岳）",3141,35.500,138.183],["赤石岳",3121,35.461,138.158],
+["聖岳",3013,35.423,138.140],["光岳",2592,35.338,138.084],["白山",2702,36.155,136.771],["荒島岳",1523,35.934,136.601],
+["伊吹山",1377,35.418,136.406],["大台ヶ原山",1695,34.185,136.109],["大峰山（八経ヶ岳）",1915,34.175,135.908],["大山",1729,35.371,133.546],
+["剣山",1955,33.854,134.094],["石鎚山",1982,33.768,133.115],["九重山",1791,33.087,131.249],["祖母山",1756,32.828,131.347],
+["阿蘇山",1592,32.884,131.104],["霧島山（韓国岳）",1700,31.934,130.862],["開聞岳",924,31.181,130.528],["宮之浦岳",1936,30.336,130.505]
+];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const stars = n => "★".repeat(n || 0) + "☆".repeat(5 - (n || 0));
+
+let state = { custom: [], records: [] };
+let user = null;
+
+async function loadData() {
+  const [m, c] = await Promise.all([
+    sb.from("yama_mountains").select("id,name,elev,lat,lng"),
+    sb.from("yama_climbs").select("id,mt,date,rating,weather,companions,route,memo")
+  ]);
+  if (m.error || c.error) { alert("データを読み込めませんでした：" + (m.error || c.error).message); return; }
+  state.custom = m.data;
+  state.records = c.data.map(r => ({ ...r, with: r.companions }));
+  render();
+}
+
+function mountains() {
+  return HYAKU.map((m, i) => ({ id: "h" + (i + 1), no: i + 1, name: m[0], elev: m[1], lat: m[2], lng: m[3] }))
+    .concat(state.custom.map(c => ({ ...c, no: null })));
+}
+const byId = id => mountains().find(m => m.id === id);
+const recsOf = id => state.records.filter(r => r.mt === id).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+// ---- 地図 ----
+const map = L.map("map").setView([36.3, 137.8], 5);
+const gsi = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>';
+const base = {
+  "地理院地図（淡色）": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", { maxZoom: 18, attribution: gsi }),
+  "地理院地図（標準・等高線あり）": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", { maxZoom: 18, attribution: gsi }),
+  "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "&copy; OpenStreetMap contributors" })
+};
+base["地理院地図（淡色）"].addTo(map);
+L.control.layers(base).addTo(map);
+const layer = L.layerGroup().addTo(map);
+let markers = {};
+
+function popupHtml(m) {
+  const rs = recsOf(m.id);
+  let h = `<div class="pop"><h3>${esc(m.name)}</h3><div class="sub">${m.elev ? m.elev + " m" : "標高未登録"}${m.no ? "　日本百名山 No." + m.no : "　（追加した山）"}</div>`;
+  if (rs.length) {
+    h += `<ul>` + rs.map(r => `<li><b>${esc(r.date)}</b> <span class="star">${stars(r.rating)}</span>
+      ${r.weather ? "　" + esc(r.weather) : ""}${r.with ? "　" + esc(r.with) : ""}
+      ${r.route ? `<div class="sub">${esc(r.route)}</div>` : ""}
+      ${r.memo ? `<div class="memo">${esc(r.memo)}</div>` : ""}
+      ${user ? `<a data-act="edit" data-id="${r.id}">編集</a><a data-act="del" data-id="${r.id}">削除</a>` : ""}</li>`).join("") + `</ul>`;
+  } else {
+    h += `<p class="sub">まだ記録がありません。</p>`;
+  }
+  if (user) {
+    h += `<button type="button" data-act="add" data-mt="${m.id}">＋ 登った記録を追加</button>`;
+    if (!m.no) h += `<div style="margin-top:6px"><a data-act="delmt" data-mt="${m.id}">この山を地図から削除</a></div>`;
+  }
+  return h + `</div>`;
+}
+
+function renderMap() {
+  layer.clearLayers(); markers = {};
+  for (const m of mountains()) {
+    const done = recsOf(m.id).length > 0;
+    const mk = L.circleMarker([m.lat, m.lng], done
+      ? { radius: 8, color: "#fff", weight: 2, fillColor: "#c2410c", fillOpacity: 1 }
+      : { radius: 5, color: m.no ? "#4b5563" : "#2563eb", weight: 1.5, fillColor: "#fff", fillOpacity: 1 });
+    mk.bindPopup(() => popupHtml(m), { maxWidth: 300 });
+    if (done) mk.bindTooltip(esc(m.name), { permanent: true, direction: "right", offset: [6, 0], className: "lbl" });
+    else mk.bindTooltip(esc(m.name) + (m.elev ? " " + m.elev + "m" : ""));
+    mk.addTo(layer);
+    markers[m.id] = mk;
+  }
+}
+
+// ---- 一覧と集計 ----
+function renderList() {
+  const q = $("q").value.trim();
+  const flt = document.querySelector('input[name="flt"]:checked').value;
+  let ms = mountains().map(m => ({ ...m, rs: recsOf(m.id) }));
+  if (q) ms = ms.filter(m => m.name.includes(q));
+  if (flt === "done") ms = ms.filter(m => m.rs.length).sort((a, b) => b.rs[0].date.localeCompare(a.rs[0].date));
+  if (flt === "todo") ms = ms.filter(m => m.no && !m.rs.length);
+  $("count").textContent = `${ms.length} 座`;
+  $("list").innerHTML = ms.length ? ms.map(m => `<li data-id="${m.id}">
+      <span class="${m.rs.length ? "done" : ""}">${m.rs.length ? "● " : ""}${esc(m.name)}</span>
+      <span class="meta">${m.elev ? m.elev + "m" : ""}${m.no ? "　百名山" + m.no : ""}${m.rs.length ? "<br>" + m.rs.length + "回・最終 " + esc(m.rs[0].date) : ""}</span>
+    </li>`).join("")
+    : `<li class="empty">${flt === "done" ? "まだ記録がありません。" : "該当する山がありません。"}</li>`;
+}
+
+function renderStats() {
+  const doneIds = new Set(state.records.map(r => r.mt));
+  const ms = mountains().filter(m => doneIds.has(m.id));
+  const hyaku = ms.filter(m => m.no).length;
+  const year = String(new Date().getFullYear());
+  const thisYear = state.records.filter(r => (r.date || "").startsWith(year)).length;
+  const top = ms.filter(m => m.elev).sort((a, b) => b.elev - a.elev)[0];
+  $("stats").innerHTML = `
+    <span>日本百名山 <b>${hyaku}</b>/100<span class="bar"><i style="width:${hyaku}%"></i></span></span>
+    <span>登った山 <b>${ms.length}</b>座</span>
+    <span>山行 <b>${state.records.length}</b>回（${year}年 ${thisYear}回）</span>
+    ${top ? `<span>最高峰 <b>${esc(top.name)}</b> ${top.elev}m</span>` : ""}`;
+}
+
+function renderAuth() {
+  document.body.classList.toggle("guest", !user);
+  $("guestNote").style.display = user ? "none" : "";
+  $("auth").innerHTML = user
+    ? `<span>${esc(user.email)}</span><button type="button" id="logoutBtn">ログアウト</button>`
+    : `<button type="button" id="loginBtn">ログイン</button>`;
+}
+
+function render() { renderAuth(); renderMap(); renderList(); renderStats(); }
+
+function focusMt(id) {
+  const m = byId(id); if (!m) return;
+  map.flyTo([m.lat, m.lng], Math.max(map.getZoom(), 10), { duration: 0.8 });
+  map.once("moveend", () => markers[id] && markers[id].openPopup());
+}
+
+$("list").addEventListener("click", e => { const li = e.target.closest("li[data-id]"); if (li) focusMt(li.dataset.id); });
+$("q").addEventListener("input", renderList);
+document.querySelectorAll('input[name="flt"]').forEach(r => r.addEventListener("change", renderList));
+
+// ---- ログイン ----
+$("auth").addEventListener("click", async e => {
+  if (e.target.id === "loginBtn") { $("loginMsg").textContent = ""; $("loginDlg").showModal(); }
+  if (e.target.id === "logoutBtn") { await sb.auth.signOut(); }
+});
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("loginMsg").textContent = "送信中…";
+  const { error } = await sb.auth.signInWithOtp({
+    email: $("l_mail").value.trim(),
+    options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname }
+  });
+  $("loginMsg").textContent = error ? "送れませんでした：" + error.message : "メールを送りました。届いたリンクを開いてください。";
+});
+$("loginCancel").addEventListener("click", () => $("loginDlg").close());
+sb.auth.onAuthStateChange((_ev, session) => {
+  user = session ? session.user : null;
+  render();
+});
+
+// ---- 記録の追加・編集 ----
+let editing = null;
+function openRec(mt, id) {
+  const m = byId(mt);
+  const r = id ? state.records.find(x => x.id === id) : null;
+  editing = { mt, id: r ? r.id : null };
+  $("recTitle").textContent = `${m.name} の山行記録`;
+  $("r_date").value = r ? r.date : new Date().toISOString().slice(0, 10);
+  $("r_rating").value = r ? r.rating : 3;
+  $("r_weather").value = r ? r.weather : "";
+  $("r_with").value = r ? r.with : "";
+  $("r_route").value = r ? r.route : "";
+  $("r_memo").value = r ? r.memo : "";
+  map.closePopup();
+  $("recDlg").showModal();
+}
+$("recForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const rec = {
+    mt: editing.mt, date: $("r_date").value, rating: +$("r_rating").value,
+    weather: $("r_weather").value.trim(), companions: $("r_with").value.trim(),
+    route: $("r_route").value.trim(), memo: $("r_memo").value.trim()
+  };
+  const q = editing.id ? sb.from("yama_climbs").update(rec).eq("id", editing.id) : sb.from("yama_climbs").insert(rec);
+  const { error } = await q;
+  if (error) { alert("保存できませんでした：" + error.message); return; }
+  $("recDlg").close();
+  await loadData();
+  focusMt(rec.mt);
+});
+$("recCancel").addEventListener("click", () => $("recDlg").close());
+
+document.addEventListener("click", async e => {
+  const t = e.target.closest("[data-act]"); if (!t || !user) return;
+  const act = t.dataset.act;
+  if (act === "add") openRec(t.dataset.mt, null);
+  if (act === "edit") { const r = state.records.find(x => x.id === t.dataset.id); if (r) openRec(r.mt, r.id); }
+  if (act === "del") {
+    const r = state.records.find(x => x.id === t.dataset.id);
+    if (r && confirm(`${r.date} の記録を削除しますか？`)) {
+      const { error } = await sb.from("yama_climbs").delete().eq("id", r.id);
+      if (error) alert("削除できませんでした：" + error.message);
+      map.closePopup(); await loadData();
+    }
+  }
+  if (act === "delmt") {
+    const m = byId(t.dataset.mt);
+    if (m && confirm(`「${m.name}」と、その山の記録をすべて削除しますか？`)) {
+      await sb.from("yama_climbs").delete().eq("mt", m.id);
+      const { error } = await sb.from("yama_mountains").delete().eq("id", m.id);
+      if (error) alert("削除できませんでした：" + error.message);
+      map.closePopup(); await loadData();
+    }
+  }
+});
+
+// ---- 百名山以外の山を追加 ----
+let adding = false, pending = null;
+function setAdding(on) {
+  adding = on;
+  $("map").classList.toggle("adding", on);
+  $("addMtBtn").textContent = on ? "追加をやめる" : "＋ 百名山以外の山を追加";
+  $("addHint").textContent = on ? "地図上の山頂の位置をクリックしてください（拡大するとずれにくいです）。" : "低山や近所の山も追加できます。ボタンを押してから、地図上の山頂をクリックしてください。";
+}
+$("addMtBtn").addEventListener("click", () => setAdding(!adding));
+map.on("click", e => {
+  if (!adding || !user) return;
+  pending = e.latlng;
+  $("m_name").value = ""; $("m_elev").value = "";
+  $("mtDlg").showModal();
+});
+$("mtForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const c = { id: "c" + Date.now(), name: $("m_name").value.trim(), elev: +$("m_elev").value || null,
+              lat: +pending.lat.toFixed(4), lng: +pending.lng.toFixed(4) };
+  const { error } = await sb.from("yama_mountains").insert(c);
+  if (error) { alert("追加できませんでした：" + error.message); return; }
+  $("mtDlg").close();
+  setAdding(false);
+  await loadData();
+  openRec(c.id, null);
+});
+$("mtCancel").addEventListener("click", () => $("mtDlg").close());
+
+// ---- バックアップ ----
+$("dl").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(state, null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `yama-log-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+  $("dataHint").textContent = "バックアップファイルを保存しました。";
+});
+$("ul").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!Array.isArray(d.records) || !Array.isArray(d.custom)) throw 0;
+    if (!confirm(`山 ${d.custom.length} 件・記録 ${d.records.length} 件を追加で取り込みます。よろしいですか？`)) return;
+    const have = new Set(state.custom.map(c => c.id));
+    const ms = d.custom.filter(c => !have.has(c.id)).map(({ id, name, elev, lat, lng }) => ({ id, name, elev, lat, lng }));
+    if (ms.length) { const r = await sb.from("yama_mountains").insert(ms); if (r.error) throw r.error; }
+    const rs = d.records.map(r => ({ mt: r.mt, date: r.date, rating: r.rating, weather: r.weather || "",
+      companions: r.with ?? r.companions ?? "", route: r.route || "", memo: r.memo || "" }));
+    if (rs.length) { const r = await sb.from("yama_climbs").insert(rs); if (r.error) throw r.error; }
+    $("dataHint").textContent = "取り込みました。";
+    await loadData();
+  } catch (err) { $("dataHint").textContent = "取り込めませんでした" + (err && err.message ? "：" + err.message : "。"); }
+  e.target.value = "";
+});
+
+render();
+loadData();
+</script>
+</body>
+</html>
